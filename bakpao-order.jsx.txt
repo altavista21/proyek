@@ -1,0 +1,365 @@
+import { useState } from "react";
+
+// ⚙️ KONFIGURASI TOKO — ganti sesuai data toko
+const STORE_WA = "6281234567890"; // Nomor WhatsApp toko (tanpa + atau 0 di depan)
+const STORE_BANK = { name: "BCA", number: "1234567890", holder: "Mbah Mami" };
+const STORE_GOPAY = "081234567890";
+
+const menu = [
+  { id: 1, name: "Bakpao Ayam",        desc: "Isian ayam cincang berbumbu gurih", price: 3000, emoji: "🥟", tag: "Best Seller" },
+  { id: 2, name: "Bakpao Kacang Hijau",desc: "Isian kacang hijau manis lembut",   price: 3000, emoji: "🫛", tag: "Klasik"     },
+  { id: 3, name: "Bakpao Coklat",      desc: "Isian coklat susu meleleh",         price: 3000, emoji: "🍫", tag: "Favorit"    },
+  { id: 4, name: "Bakpao Keju",        desc: "Isian keju cheddar creamy",         price: 3000, emoji: "🧀", tag: "Baru"       },
+  { id: 5, name: "Bakpao Daging Ayam", desc: "Isian daging ayam lada hitam",      price: 5000, emoji: "🍗", tag: "Premium"    },
+  { id: 6, name: "Bakpao Strawberry",  desc: "Isian selai strawberry segar",      price: 3000, emoji: "🍓", tag: "Manis"      },
+];
+
+const tagColors = {
+  "Best Seller": "#b45309", "Klasik": "#78716c", "Favorit": "#92400e",
+  "Baru": "#15803d", "Premium": "#7c3aed", "Manis": "#be185d",
+};
+
+const paymentMethods = [
+  { id: "qris",     label: "QRIS",             icon: "⬛", desc: "Scan QR — GoPay, OVO, Dana, dll" },
+  { id: "transfer", label: "Transfer Bank",    icon: "🏦", desc: `BCA · ${STORE_BANK.number}` },
+  { id: "gopay",    label: "GoPay / OVO",      icon: "💚", desc: `Kirim ke ${STORE_GOPAY}` },
+  { id: "cod",      label: "Bayar di Tempat",  icon: "💵", desc: "Bayar saat barang tiba" },
+];
+
+const inputStyle = {
+  width: "100%", padding: "10px 14px", borderRadius: 10,
+  border: "1.5px solid #e8d5c4", fontSize: 14, fontFamily: "Georgia, serif",
+  background: "#fdf8f3", color: "#3b1f0a", outline: "none", boxSizing: "border-box",
+};
+
+const btnPrimary = {
+  width: "100%", padding: "16px 0",
+  background: "linear-gradient(135deg,#a0522d,#7c3410)",
+  color: "#fff", border: "none", borderRadius: 14,
+  fontSize: 15, fontFamily: "Georgia, serif", fontWeight: "bold",
+  cursor: "pointer", letterSpacing: 0.5,
+  boxShadow: "0 4px 16px rgba(124,52,16,0.3)",
+};
+
+function QRPlaceholder({ value }) {
+  const seed = value.split("").reduce((a, c) => a + c.charCodeAt(0), 0);
+  const size = 9;
+  const cells = Array.from({ length: size * size }, (_, i) => {
+    const r = Math.floor(i / size), c = i % size;
+    if ((r < 3 && c < 3) || (r < 3 && c >= size - 3) || (r >= size - 3 && c < 3)) return true;
+    return ((seed * (i + 7) * 31 + i * 13) % 17) > 7;
+  });
+  const px = 28;
+  return (
+    <svg width={size * px} height={size * px} style={{ display: "block", margin: "0 auto" }}>
+      <rect width="100%" height="100%" fill="white" />
+      {cells.map((on, i) => on && (
+        <rect key={i} x={(i % size) * px + 2} y={Math.floor(i / size) * px + 2}
+          width={px - 4} height={px - 4} rx={3} fill="#1a0a00" />
+      ))}
+    </svg>
+  );
+}
+
+export default function BakpaoOrder() {
+  const [cart, setCart]           = useState({});
+  const [step, setStep]           = useState("menu");
+  const [name, setName]           = useState("");
+  const [phone, setPhone]         = useState("");
+  const [note, setNote]           = useState("");
+  const [payMethod, setPayMethod] = useState("");
+  const [payDone, setPayDone]     = useState(false);
+  const [animating, setAnimating] = useState(null);
+  const [copied, setCopied]       = useState("");
+
+  const add = (id) => {
+    setAnimating(id); setTimeout(() => setAnimating(null), 300);
+    setCart(c => ({ ...c, [id]: (c[id] || 0) + 1 }));
+  };
+  const remove = (id) => setCart(c => {
+    const n = { ...c };
+    if (n[id] > 1) n[id]--; else delete n[id];
+    return n;
+  });
+
+  const totalItems = Object.values(cart).reduce((a, b) => a + b, 0);
+  const totalPrice = Object.entries(cart).reduce((sum, [id, qty]) =>
+    sum + (menu.find(m => m.id === Number(id))?.price || 0) * qty, 0);
+
+  const fmt = n => new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(n);
+
+  const buildWAMsg = () => {
+    const lines = ["🥟 *PESANAN BAKPAO MBAH MAMI*", ""];
+    Object.entries(cart).forEach(([id, qty]) => {
+      const item = menu.find(m => m.id === Number(id));
+      lines.push(`• ${item.emoji} ${item.name} x${qty} = ${fmt(item.price * qty)}`);
+    });
+    lines.push("", `*Total: ${fmt(totalPrice)}*`, "");
+    lines.push(`👤 Nama: ${name}`, `📱 HP: ${phone}`);
+    if (note) lines.push(`📝 Catatan: ${note}`);
+    lines.push("", `💳 Pembayaran: ${paymentMethods.find(p => p.id === payMethod)?.label || "-"}`);
+    return encodeURIComponent(lines.join("\n"));
+  };
+
+  const openWA = () => window.open(`https://wa.me/${STORE_WA}?text=${buildWAMsg()}`, "_blank");
+
+  const copy = (text, key) => {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(key); setTimeout(() => setCopied(""), 2000);
+    });
+  };
+
+  const handleConfirm = () => {
+    setPayDone(true);
+    setTimeout(() => { openWA(); setStep("success"); }, 500);
+  };
+
+  const reset = () => {
+    setCart({}); setName(""); setPhone(""); setNote("");
+    setPayMethod(""); setPayDone(false); setStep("menu");
+  };
+
+  const canGoCart    = totalItems > 0;
+  const canGoPayment = canGoCart && name.trim() && phone.trim();
+
+  const Header = () => (
+    <div style={{ background: "linear-gradient(135deg,#7c3410 0%,#a0522d 50%,#6b2d0f 100%)", position: "relative", overflow: "hidden" }}>
+      <div style={{ position: "absolute", top: -40, right: -40, width: 160, height: 160, borderRadius: "50%", background: "rgba(255,255,255,0.06)" }} />
+      <div style={{ padding: "22px 18px 18px", position: "relative", zIndex: 1, display: "flex", alignItems: "center", gap: 12 }}>
+        <span style={{ fontSize: 36 }}>🥟</span>
+        <div>
+          <div style={{ fontSize: 20, fontWeight: "bold", color: "#fff", letterSpacing: 1 }}>Bakpao Mbah Mami</div>
+          <div style={{ fontSize: 11, color: "#fcd5a8", marginTop: 2 }}>Lembut · Gurih · Tradisional</div>
+        </div>
+      </div>
+      {step !== "success" && (
+        <div style={{ display: "flex", background: "rgba(0,0,0,0.18)", borderTop: "1px solid rgba(255,255,255,0.1)" }}>
+          {[["menu","🍽️ Menu"], ["cart",`🛒 Keranjang${totalItems > 0 ? ` (${totalItems})` : ""}`], ["payment","💳 Bayar"]].map(([s, label]) => {
+            const dis = (s === "cart" && !canGoCart) || (s === "payment" && !canGoPayment);
+            return (
+              <button key={s} onClick={() => !dis && setStep(s)} style={{
+                flex: 1, padding: "11px 0", border: "none", cursor: dis ? "default" : "pointer",
+                background: step === s ? "rgba(255,255,255,0.15)" : "transparent",
+                color: step === s ? "#fff" : dis ? "rgba(255,255,255,0.28)" : "rgba(255,255,255,0.65)",
+                fontFamily: "Georgia, serif", fontSize: 12,
+                borderBottom: step === s ? "3px solid #fcd5a8" : "3px solid transparent",
+                transition: "all 0.2s",
+              }}>{label}</button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+
+  /* ── MENU ── */
+  if (step === "menu") return (
+    <div style={{ minHeight: "100vh", background: "#fdf8f3", fontFamily: "Georgia, serif", color: "#3b1f0a" }}>
+      <Header />
+      <div style={{ padding: "16px 12px 100px" }}>
+        <div style={{ fontSize: 12, color: "#a07050", marginBottom: 12, textAlign: "center" }}>Pilih bakpao kesukaanmu ✨</div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+          {menu.map(item => {
+            const qty = cart[item.id] || 0;
+            return (
+              <div key={item.id} style={{ background: "#fff", borderRadius: 16, padding: "13px 11px", boxShadow: "0 2px 12px rgba(120,70,30,0.08)", border: qty > 0 ? "2px solid #a0522d" : "2px solid transparent", transition: "all 0.2s", transform: animating === item.id ? "scale(0.95)" : "scale(1)", position: "relative" }}>
+                {qty > 0 && <div style={{ position: "absolute", top: 7, right: 7, background: "#a0522d", color: "#fff", borderRadius: "50%", width: 19, height: 19, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: "bold" }}>{qty}</div>}
+                <div style={{ fontSize: 32, textAlign: "center", marginBottom: 5 }}>{item.emoji}</div>
+                <div style={{ display: "inline-block", background: tagColors[item.tag] + "18", color: tagColors[item.tag], fontSize: 9, padding: "2px 7px", borderRadius: 20, fontWeight: "bold", marginBottom: 4 }}>{item.tag}</div>
+                <div style={{ fontSize: 12, fontWeight: "bold", marginBottom: 3, lineHeight: 1.3 }}>{item.name}</div>
+                <div style={{ fontSize: 10, color: "#a07050", marginBottom: 7, lineHeight: 1.4 }}>{item.desc}</div>
+                <div style={{ fontSize: 13, fontWeight: "bold", color: "#7c3410", marginBottom: 7 }}>{fmt(item.price)}</div>
+                {qty === 0
+                  ? <button onClick={() => add(item.id)} style={{ width: "100%", padding: "7px 0", background: "linear-gradient(135deg,#a0522d,#7c3410)", color: "#fff", border: "none", borderRadius: 9, cursor: "pointer", fontSize: 12, fontFamily: "Georgia, serif", fontWeight: "bold" }}>+ Tambah</button>
+                  : <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                      <button onClick={() => remove(item.id)} style={{ flex: 1, padding: "7px 0", background: "#f5ede6", color: "#7c3410", border: "none", borderRadius: 9, cursor: "pointer", fontSize: 15, fontWeight: "bold" }}>−</button>
+                      <span style={{ fontWeight: "bold", fontSize: 14, minWidth: 20, textAlign: "center" }}>{qty}</span>
+                      <button onClick={() => add(item.id)} style={{ flex: 1, padding: "7px 0", background: "linear-gradient(135deg,#a0522d,#7c3410)", color: "#fff", border: "none", borderRadius: 9, cursor: "pointer", fontSize: 15, fontWeight: "bold" }}>+</button>
+                    </div>
+                }
+              </div>
+            );
+          })}
+        </div>
+      </div>
+      {totalItems > 0 && (
+        <div style={{ position: "fixed", bottom: 18, left: 0, right: 0, display: "flex", justifyContent: "center", zIndex: 100, padding: "0 18px" }}>
+          <button onClick={() => setStep("cart")} style={{ background: "linear-gradient(135deg,#a0522d,#7c3410)", color: "#fff", border: "none", borderRadius: 50, padding: "13px 26px", fontSize: 14, fontFamily: "Georgia, serif", fontWeight: "bold", cursor: "pointer", boxShadow: "0 6px 24px rgba(124,52,16,0.4)", display: "flex", alignItems: "center", gap: 9 }}>
+            <span style={{ background: "rgba(255,255,255,0.25)", borderRadius: "50%", width: 23, height: 23, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: "bold" }}>{totalItems}</span>
+            🛒 Keranjang · {fmt(totalPrice)}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+
+  /* ── CART ── */
+  if (step === "cart") return (
+    <div style={{ minHeight: "100vh", background: "#fdf8f3", fontFamily: "Georgia, serif", color: "#3b1f0a" }}>
+      <Header />
+      <div style={{ padding: "16px 14px 120px" }}>
+        <div style={{ fontSize: 15, fontWeight: "bold", marginBottom: 12, color: "#5c2d0e" }}>Detail Pesanan</div>
+        <div style={{ background: "#fff", borderRadius: 16, marginBottom: 14, boxShadow: "0 2px 12px rgba(120,70,30,0.07)" }}>
+          {Object.entries(cart).map(([id, qty]) => {
+            const item = menu.find(m => m.id === Number(id));
+            return (
+              <div key={id} style={{ display: "flex", alignItems: "center", padding: "12px 14px", borderBottom: "1px solid #f5ede6" }}>
+                <span style={{ fontSize: 22, marginRight: 10 }}>{item.emoji}</span>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 13, fontWeight: "bold" }}>{item.name}</div>
+                  <div style={{ fontSize: 11, color: "#a07050" }}>{fmt(item.price)} × {qty}</div>
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+                  <button onClick={() => remove(Number(id))} style={{ width: 25, height: 25, borderRadius: 7, border: "none", background: "#f5ede6", color: "#7c3410", cursor: "pointer", fontSize: 14, fontWeight: "bold" }}>−</button>
+                  <span style={{ fontWeight: "bold", fontSize: 13, minWidth: 14, textAlign: "center" }}>{qty}</span>
+                  <button onClick={() => add(Number(id))} style={{ width: 25, height: 25, borderRadius: 7, border: "none", background: "#a0522d", color: "#fff", cursor: "pointer", fontSize: 14, fontWeight: "bold" }}>+</button>
+                </div>
+              </div>
+            );
+          })}
+          <div style={{ display: "flex", justifyContent: "space-between", padding: "12px 14px", fontWeight: "bold", fontSize: 15 }}>
+            <span>Total</span><span style={{ color: "#7c3410" }}>{fmt(totalPrice)}</span>
+          </div>
+        </div>
+
+        <div style={{ background: "#fff", borderRadius: 16, padding: "15px", boxShadow: "0 2px 12px rgba(120,70,30,0.07)", marginBottom: 16 }}>
+          <div style={{ fontSize: 13, fontWeight: "bold", marginBottom: 12, color: "#5c2d0e" }}>📋 Data Pemesan</div>
+          {[["Nama Lengkap", name, setName, "Contoh: Budi Santoso", "text"], ["No. HP / WhatsApp", phone, setPhone, "Contoh: 0812xxxxxxxx", "tel"]].map(([label, val, set, ph, type]) => (
+            <div key={label} style={{ marginBottom: 11 }}>
+              <label style={{ fontSize: 11, color: "#a07050", display: "block", marginBottom: 5 }}>{label}</label>
+              <input type={type} value={val} onChange={e => set(e.target.value)} placeholder={ph} style={inputStyle} />
+            </div>
+          ))}
+          <label style={{ fontSize: 11, color: "#a07050", display: "block", marginBottom: 5 }}>Catatan (opsional)</label>
+          <textarea value={note} onChange={e => setNote(e.target.value)} placeholder="Contoh: tanpa pedas, kirim sebelum jam 12" rows={2} style={{ ...inputStyle, resize: "none" }} />
+        </div>
+
+        <button onClick={() => setStep("payment")} disabled={!canGoPayment} style={{ ...btnPrimary, background: canGoPayment ? "linear-gradient(135deg,#a0522d,#7c3410)" : "#d4c0b0", cursor: canGoPayment ? "pointer" : "not-allowed", boxShadow: canGoPayment ? "0 4px 16px rgba(124,52,16,0.3)" : "none" }}>
+          💳 Pilih Pembayaran →
+        </button>
+      </div>
+    </div>
+  );
+
+  /* ── PAYMENT ── */
+  if (step === "payment") return (
+    <div style={{ minHeight: "100vh", background: "#fdf8f3", fontFamily: "Georgia, serif", color: "#3b1f0a" }}>
+      <Header />
+      <div style={{ padding: "16px 14px 120px" }}>
+        <div style={{ fontSize: 15, fontWeight: "bold", marginBottom: 3, color: "#5c2d0e" }}>Metode Pembayaran</div>
+        <div style={{ fontSize: 12, color: "#a07050", marginBottom: 14 }}>Total: <strong style={{ color: "#7c3410" }}>{fmt(totalPrice)}</strong></div>
+
+        <div style={{ display: "flex", flexDirection: "column", gap: 9, marginBottom: 18 }}>
+          {paymentMethods.map(p => (
+            <button key={p.id} onClick={() => setPayMethod(p.id)} style={{ background: payMethod === p.id ? "#fff7f0" : "#fff", border: `2px solid ${payMethod === p.id ? "#a0522d" : "#f0e0d0"}`, borderRadius: 14, padding: "13px 15px", cursor: "pointer", display: "flex", alignItems: "center", gap: 13, textAlign: "left", transition: "all 0.2s", boxShadow: payMethod === p.id ? "0 2px 12px rgba(160,82,45,0.15)" : "0 1px 4px rgba(120,70,30,0.06)" }}>
+              <span style={{ fontSize: 26 }}>{p.icon}</span>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 14, fontWeight: "bold", color: "#3b1f0a" }}>{p.label}</div>
+                <div style={{ fontSize: 11, color: "#a07050", marginTop: 2 }}>{p.desc}</div>
+              </div>
+              <div style={{ width: 19, height: 19, borderRadius: "50%", border: `2px solid ${payMethod === p.id ? "#a0522d" : "#d4b8a0"}`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                {payMethod === p.id && <div style={{ width: 9, height: 9, borderRadius: "50%", background: "#a0522d" }} />}
+              </div>
+            </button>
+          ))}
+        </div>
+
+        {/* Detail Panel */}
+        {payMethod === "qris" && (
+          <div style={{ background: "#fff", borderRadius: 16, padding: "18px 14px", marginBottom: 16, boxShadow: "0 2px 12px rgba(120,70,30,0.08)", textAlign: "center" }}>
+            <div style={{ fontWeight: "bold", fontSize: 14, marginBottom: 3, color: "#5c2d0e" }}>Scan QRIS</div>
+            <div style={{ fontSize: 11, color: "#a07050", marginBottom: 14 }}>GoPay · OVO · Dana · ShopeePay · dll</div>
+            <div style={{ background: "#f9f3ee", borderRadius: 12, padding: 14, display: "inline-block", marginBottom: 10 }}>
+              <QRPlaceholder value={`BAKPAO-${name}-${totalPrice}`} />
+            </div>
+            <div style={{ fontSize: 13, color: "#5c2d0e" }}>Nominal: <strong>{fmt(totalPrice)}</strong></div>
+            <div style={{ fontSize: 10, color: "#c0a080", marginTop: 8, padding: "8px 12px", background: "#fff7f0", borderRadius: 8 }}>⚠️ QR di atas adalah contoh tampilan. QR asli akan dikirim toko via WhatsApp.</div>
+          </div>
+        )}
+
+        {payMethod === "transfer" && (
+          <div style={{ background: "#fff", borderRadius: 16, padding: "16px 14px", marginBottom: 16, boxShadow: "0 2px 12px rgba(120,70,30,0.08)" }}>
+            <div style={{ fontWeight: "bold", fontSize: 14, marginBottom: 12, color: "#5c2d0e" }}>🏦 Info Rekening</div>
+            {[["Bank", STORE_BANK.name, null], ["No. Rekening", STORE_BANK.number, "rek"], ["Atas Nama", STORE_BANK.holder, null], ["Jumlah Transfer", fmt(totalPrice), "nominal"]].map(([k, v, ckey]) => (
+              <div key={k} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "9px 0", borderBottom: "1px solid #f5ede6" }}>
+                <span style={{ fontSize: 12, color: "#a07050" }}>{k}</span>
+                <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+                  <span style={{ fontSize: 13, fontWeight: "bold" }}>{v}</span>
+                  {ckey && <button onClick={() => copy(ckey === "rek" ? STORE_BANK.number : String(totalPrice), ckey)} style={{ fontSize: 10, padding: "3px 8px", background: copied === ckey ? "#d4edda" : "#f5ede6", color: copied === ckey ? "#155724" : "#7c3410", border: "none", borderRadius: 6, cursor: "pointer" }}>{copied === ckey ? "✓" : "Copy"}</button>}
+                </div>
+              </div>
+            ))}
+            <div style={{ marginTop: 10, padding: "9px 11px", background: "#fff7f0", borderRadius: 9, fontSize: 11, color: "#a07050", lineHeight: 1.6 }}>⚠️ Transfer sesuai nominal tepat. Setelah transfer, klik tombol konfirmasi di bawah.</div>
+          </div>
+        )}
+
+        {payMethod === "gopay" && (
+          <div style={{ background: "#fff", borderRadius: 16, padding: "16px 14px", marginBottom: 16, boxShadow: "0 2px 12px rgba(120,70,30,0.08)", textAlign: "center" }}>
+            <div style={{ fontWeight: "bold", fontSize: 14, marginBottom: 10, color: "#5c2d0e" }}>💚 Transfer GoPay / OVO</div>
+            <div style={{ fontSize: 24, fontWeight: "bold", letterSpacing: 3, background: "#f5ede6", padding: "12px 20px", borderRadius: 12, display: "inline-block", marginBottom: 8 }}>{STORE_GOPAY}</div>
+            <div style={{ fontSize: 12, color: "#a07050", marginBottom: 10 }}>Nominal: <strong style={{ color: "#7c3410" }}>{fmt(totalPrice)}</strong></div>
+            <button onClick={() => copy(STORE_GOPAY, "gopay")} style={{ fontSize: 12, padding: "7px 18px", background: copied === "gopay" ? "#d4edda" : "#f5ede6", color: copied === "gopay" ? "#155724" : "#7c3410", border: "none", borderRadius: 9, cursor: "pointer" }}>
+              {copied === "gopay" ? "✓ Tersalin!" : "📋 Salin Nomor"}
+            </button>
+          </div>
+        )}
+
+        {payMethod === "cod" && (
+          <div style={{ background: "#fff7f0", border: "1.5px solid #e8c8a8", borderRadius: 14, padding: "14px", marginBottom: 16, fontSize: 13, color: "#7c3410", lineHeight: 1.8 }}>
+            💵 <strong>Bayar di Tempat (COD)</strong><br />
+            Siapkan uang pas <strong>{fmt(totalPrice)}</strong>. Konfirmasi pesanan akan dikirim via WhatsApp.
+          </div>
+        )}
+
+        <button onClick={handleConfirm} disabled={!payMethod || payDone} style={{ ...btnPrimary, background: payMethod && !payDone ? "linear-gradient(135deg,#25d366,#128c7e)" : "#d4c0b0", cursor: payMethod && !payDone ? "pointer" : "not-allowed", boxShadow: payMethod ? "0 4px 16px rgba(18,140,126,0.3)" : "none" }}>
+          {payDone ? "⏳ Membuka WhatsApp..." : "✅ Konfirmasi & Kirim ke WhatsApp"}
+        </button>
+        <div style={{ fontSize: 11, color: "#a07050", textAlign: "center", marginTop: 10 }}>
+          Pesananmu otomatis dikirim ke WhatsApp toko setelah konfirmasi.
+        </div>
+      </div>
+    </div>
+  );
+
+  /* ── SUCCESS ── */
+  return (
+    <div style={{ minHeight: "100vh", background: "#fdf8f3", fontFamily: "Georgia, serif", color: "#3b1f0a" }}>
+      <div style={{ background: "linear-gradient(135deg,#7c3410,#a0522d)", padding: "22px 18px", textAlign: "center" }}>
+        <div style={{ fontSize: 34 }}>🥟</div>
+        <div style={{ fontSize: 16, fontWeight: "bold", color: "#fff", marginTop: 6 }}>Bakpao Mbah Mami</div>
+      </div>
+      <div style={{ padding: "32px 18px", textAlign: "center" }}>
+        <div style={{ fontSize: 58, marginBottom: 10 }}>🎉</div>
+        <div style={{ fontSize: 20, fontWeight: "bold", color: "#5c2d0e", marginBottom: 6 }}>Pesanan Berhasil!</div>
+        <div style={{ fontSize: 13, color: "#a07050", marginBottom: 22, lineHeight: 1.9 }}>
+          Terima kasih, <strong>{name}</strong>!<br />
+          WhatsApp toko sudah terbuka.<br />
+          Pastikan pesan terkirim ya 😊<br />
+          <span style={{ fontSize: 11 }}>💳 {paymentMethods.find(p => p.id === payMethod)?.label}</span>
+        </div>
+        <div style={{ background: "#fff", borderRadius: 16, padding: "14px", boxShadow: "0 2px 12px rgba(120,70,30,0.08)", textAlign: "left", marginBottom: 18 }}>
+          <div style={{ fontWeight: "bold", fontSize: 13, marginBottom: 10, color: "#5c2d0e" }}>Ringkasan Pesanan</div>
+          {Object.entries(cart).map(([id, qty]) => {
+            const item = menu.find(m => m.id === Number(id));
+            return (
+              <div key={id} style={{ display: "flex", justifyContent: "space-between", padding: "5px 0", borderBottom: "1px solid #f5ede6", fontSize: 12 }}>
+                <span>{item.emoji} {item.name} ×{qty}</span>
+                <span style={{ color: "#7c3410", fontWeight: "bold" }}>{fmt(item.price * qty)}</span>
+              </div>
+            );
+          })}
+          <div style={{ display: "flex", justifyContent: "space-between", padding: "9px 0 0", fontWeight: "bold", fontSize: 14 }}>
+            <span>Total</span><span style={{ color: "#7c3410" }}>{fmt(totalPrice)}</span>
+          </div>
+          {note && <div style={{ marginTop: 7, fontSize: 11, color: "#a07050" }}>📝 {note}</div>}
+        </div>
+        <button onClick={openWA} style={{ ...btnPrimary, background: "linear-gradient(135deg,#25d366,#128c7e)", boxShadow: "0 4px 16px rgba(18,140,126,0.3)", marginBottom: 10 }}>
+          💬 Buka WhatsApp Toko
+        </button>
+        <button onClick={reset} style={{ ...btnPrimary, background: "linear-gradient(135deg,#a0522d,#7c3410)" }}>
+          ↩ Pesan Lagi
+        </button>
+      </div>
+    </div>
+  );
+}
