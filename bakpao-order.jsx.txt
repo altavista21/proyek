@@ -1,7 +1,7 @@
 import { useState } from "react";
 
 // ⚙️ KONFIGURASI TOKO — ganti sesuai data toko
-const STORE_WA = "6281234567890"; // Nomor WhatsApp toko (tanpa + atau 0 di depan)
+const STORE_WA = "6285148360854"; // Nomor WhatsApp toko (tanpa + atau 0 di depan)
 const STORE_BANK = { name: "BCA", number: "1234567890", holder: "Mbah Mami" };
 const STORE_GOPAY = "081234567890";
 
